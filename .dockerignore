@@ -1,0 +1,17 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+artifacts
+scratch
+.DS_Store
+.env
+*.log
+terraform/.terraform
+terraform/*.tfstate*
