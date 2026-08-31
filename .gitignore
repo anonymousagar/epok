@@ -1,0 +1,15 @@
+# Environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS Files
+.DS_Store
+
+# Epok specific / Env variables
+.env
