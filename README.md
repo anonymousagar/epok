@@ -9,47 +9,71 @@
 Epok connects issue tracking, LLM-driven software engineering, human-in-the-loop governance, and continuous integration into a resilient, stateful workflow powered by **Temporal.io** and **Google Gemini 2.5 Flash**.
 
 ```mermaid
-flowchart TD
-    subgraph Webhook Gateway
-        L[Linear Issue Webhook] -->|POST /webhooks/linear| G[FastAPI Webhook Gateway]
-        GH[GitHub Actions CI Webhook] -->|POST /webhooks/github| G
-        S[Slack Button Actions Webhook] -->|POST /webhooks/slack| G
+flowchart LR
+    %% Industry-grade styling classes
+    classDef external fill:#1e293b,stroke:#64748b,stroke-width:2px,color:#f8fafc
+    classDef edge fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#60a5fa
+    classDef workflow fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#a5b4fc
+    classDef activity fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#6ee7b7
+    classDef ci fill:#701a75,stroke:#d946ef,stroke-width:2px,color:#f5d0fe
+
+    subgraph EXT["🌐 External Platforms"]
+        L_SYS["Linear Workspace"]:::external
+        GH_SYS["GitHub Repository"]:::external
+        SLACK_SYS["Slack Workspace"]:::external
     end
 
-    subgraph Temporal Workflow Engine
-        G -->|Start Workflow| W[FeatureDeliveryLifecycleWorkflow]
+    subgraph GATEWAY["⚡ FastAPI Webhook Gateway"]
+        WH_L["/webhooks/linear"]:::edge
+        WH_GH["/webhooks/github"]:::edge
+        WH_S["/webhooks/slack"]:::edge
+    end
+
+    subgraph ORCHESTRATOR["⚙️ Temporal Engine"]
+        MF_WF["FeatureDeliveryLifecycleWorkflow"]:::workflow
+        CI_WF["CIRepairWorkflow"]:::workflow
         
-        subgraph Agent 1: Spec & Architecture Agent
-            W -->|Activity: Ingest Issue| L_ACT[fetch_linear_issue_details]
-            W -->|Activity: Inspect Tree| GH_ACT1[inspect_repo_context]
-            W -->|Activity: Gemini 2.5 Flash| GEM_ACT1[generate_technical_spec]
-        end
-        
-        subgraph Human Approval Gate
-            W -->|Activity: Dispatch Slack UI| SLACK_ACT1[dispatch_slack_spec_approval]
-            SLACK_ACT1 -->|Post Block Kit Card| SLACK_CH[Slack #epok-approvals]
-            SLACK_CH -->|Human Clicks Approve| S
-            S -->|Signal: spec_approval_signal| W
+        subgraph AGENT1["🧠 Agent 1: Spec Agent"]
+            A_INGEST["fetch_linear_issue_details"]:::activity
+            A_TREE["inspect_repo_context"]:::activity
+            A_SPEC["generate_technical_spec\n(Gemini 2.5 Flash)"]:::activity
         end
 
-        subgraph Agent 2: Code Generation & PR Swarm
-            W -->|Activity: Code Generation| GEM_ACT2[generate_code_patches]
-            W -->|Activity: Git Branch Commit| GH_ACT2[commit_code_patches]
-            W -->|Activity: Open GitHub PR| GH_ACT3[create_github_pr]
+        subgraph GATE["🚦 Governance Gate"]
+            A_DISPATCH["dispatch_slack_spec_approval"]:::activity
+            A_WAIT["workflow.wait_condition\n(48h SLA Timeout)"]:::activity
         end
 
-        subgraph Agent 3: CI Watchdog & Self-Healing Loop
-            GH -->|CI Failure| CI_WF[CIRepairWorkflow]
-            CI_WF -->|Activity: Extract Failure Logs| CI_ACT1[fetch_ci_failure_logs]
-            CI_WF -->|Activity: Gemini Repair Patch| CI_ACT2[generate_ci_repair_patches]
-            CI_WF -->|Activity: Commit Fix Patch| GH_ACT2
+        subgraph AGENT2["🛠️ Agent 2: Code & PR Swarm"]
+            A_GEN["generate_code_patches\n(Gemini 2.5 Flash)"]:::activity
+            A_COMMIT["commit_code_patches\n(PyGithub)"]:::activity
+            A_PR["create_github_pr"]:::activity
         end
 
-        subgraph Real-Time Lifecycle Sync
-            W -->|Activity: Sync State & Comment| L_SYNC[update_linear_issue_status]
-            W -->|Activity: Update Card| S_SYNC[update_slack_spec_status]
+        subgraph AGENT3["🔄 Agent 3: CI Watchdog"]
+            A_LOGS["fetch_ci_failure_logs"]:::ci
+            A_REPAIR["generate_ci_repair_patches"]:::ci
+        end
+
+        subgraph SYNC["🌐 Lifecycle Sync"]
+            A_L_SYNC["update_linear_issue_status"]:::activity
+            A_S_SYNC["update_slack_spec_status"]:::activity
         end
     end
+
+    %% Event Flows
+    L_SYS -->|Issue Event| WH_L
+    GH_SYS -->|CI Failure| WH_GH
+    SLACK_SYS -->|Human Approval| WH_S
+
+    WH_L -->|Start Workflow| MF_WF
+    WH_GH -->|Trigger Repair| CI_WF
+    WH_S -->|Send Signal| A_WAIT
+
+    MF_WF --> A_INGEST --> A_TREE --> A_SPEC --> A_DISPATCH --> A_WAIT
+    A_WAIT -->|Approved| A_GEN --> A_COMMIT --> A_PR --> A_L_SYNC & A_S_SYNC
+    
+    CI_WF --> A_LOGS --> A_REPAIR --> A_COMMIT
 ```
 
 ---
@@ -297,7 +321,7 @@ Using your HTTPS ngrok domain (e.g. `https://dc95-103-187-217-229.ngrok-free.app
    * Click **Approve Spec** in Slack.
 3. **Automated PR & Status Update**:
    * Epok generates multi-file code patches, creates branch `epok/lin-<id>`, commits code, and opens a GitHub Pull Request on your repository!
-   * Linear status updates automatically to **`In Review`** with the PR URL attached.
+   * Linear status updates automatically to **`Buffer` / `In Review`** with the PR URL attached.
 4. **Monitor Workflow Traces**:
    * Inspect live execution steps at **[http://localhost:8233](http://localhost:8233)**.
 
@@ -365,7 +389,7 @@ For complete operational procedures, see the [E2E Runbook](file:///Users/atul.sa
 * **Decision**: Formatted Temporal workflow IDs as `epok-linear-{issue.id}-{updatedAt}`.
 * **Rationale & Trade-off**: Prevents duplicate workflow instances when upstream platforms (e.g. Linear) send retried webhook POST requests due to network blips.
 
-### 6. Fine-Grained PyGithub Tree Commits vs. Archive Overwrites
+### 6. Fine-Grained PyGithub Blob Commits vs. Archive Overwrites
 * **Decision**: Used PyGithub's Blob and Ref API to commit targeted file modifications rather than uploading repository tarballs.
 * **Rationale & Trade-off**: Preserves clean Git history, commit author attribution, and branch isolation, though it requires multiple API roundtrips per file patch.
 
