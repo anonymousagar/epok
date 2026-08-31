@@ -6,10 +6,10 @@ from temporalio.common import RetryPolicy
 
 # Import activity definitions for type-safe invocation
 with workflow.unsafe.imports_passed_through():
-    from activities.linear_activities import fetch_linear_issue_details
+    from activities.linear_activities import fetch_linear_issue_details, update_linear_issue_status
     from activities.github_activities import inspect_repo_context, commit_code_patches, create_github_pr
     from activities.gemini_activities import generate_technical_spec
-    from activities.slack_activities import dispatch_slack_spec_approval
+    from activities.slack_activities import dispatch_slack_spec_approval, update_slack_spec_status
     from activities.code_activities import generate_code_patches
     from models.dtos import SpecArchitectureOutput, CodePatchResult
 
@@ -57,7 +57,7 @@ class FeatureDeliveryLifecycleWorkflow:
 
         # Phase 3: Dispatch Slack Block Kit spec approval UI
         issue_url = issue_context.get("url", "")
-        await workflow.execute_activity(
+        slack_spec_res: Dict[str, Any] = await workflow.execute_activity(
             dispatch_slack_spec_approval,
             args=[spec_output, issue_url],
             start_to_close_timeout=timedelta(seconds=30),
@@ -125,5 +125,23 @@ class FeatureDeliveryLifecycleWorkflow:
             retry_policy=retry_policy,
         )
 
+        # Sync status to Linear and Slack
+        if code_patch_result.pr_url:
+            await workflow.execute_activity(
+                update_linear_issue_status,
+                args=[issue_id, "In Review", f"Epok Pull Request Created: {code_patch_result.pr_url}"],
+                start_to_close_timeout=timedelta(seconds=30),
+                retry_policy=retry_policy,
+            )
+
+            if slack_spec_res.get("channel") and slack_spec_res.get("ts"):
+                await workflow.execute_activity(
+                    update_slack_spec_status,
+                    args=[slack_spec_res["channel"], slack_spec_res["ts"], "PR Submitted & In Review", code_patch_result.pr_url],
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=retry_policy,
+                )
+
         return code_patch_result
+
 

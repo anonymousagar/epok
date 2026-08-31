@@ -466,3 +466,44 @@ async def test_update_linear_issue_status_missing_api_key(monkeypatch):
     monkeypatch.delenv("LINEAR_API_KEY", raising=False)
     with pytest.raises(ValueError, match="LINEAR_API_KEY environment variable is not set."):
         await update_linear_issue_status("lin-101")
+
+
+# --- Ticket 6.3 Tests: Slack Lifecycle Update Activity ---
+
+from activities.slack_activities import update_slack_spec_status
+
+
+@pytest.mark.asyncio
+async def test_update_slack_spec_status_success(monkeypatch):
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "fake-slack-token")
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = lambda: None
+    mock_response.json.return_value = {"ok": True, "channel": "C12345", "ts": "100.1"}
+
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    monkeypatch.setattr("activities.slack_activities.httpx.AsyncClient", lambda **kwargs: mock_client)
+
+    result = await update_slack_spec_status(
+        channel="C12345",
+        message_ts="100.1",
+        status_text="PR Submitted",
+        pr_url="https://github.com/org/epok/pull/42"
+    )
+
+    assert result["channel"] == "C12345"
+    assert result["ts"] == "100.1"
+    assert result["status"] == "updated"
+    assert result["status_text"] == "PR Submitted"
+    mock_client.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_slack_spec_status_missing_token(monkeypatch):
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="SLACK_BOT_TOKEN environment variable is not set."):
+        await update_slack_spec_status("C12345", "100.1", "PR Submitted")

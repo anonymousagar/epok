@@ -117,3 +117,70 @@ async def dispatch_slack_spec_approval(
         "status": "posted",
     }
 
+
+SLACK_API_UPDATE_MESSAGE = "https://slack.com/api/chat.update"
+
+
+
+@activity.defn
+async def update_slack_spec_status(
+    channel: str,
+    message_ts: str,
+    status_text: str,
+    pr_url: str = ""
+) -> Dict[str, Any]:
+    """
+    Updates an existing Slack Block Kit architecture spec message with new status badges or PR links.
+    """
+    bot_token = os.getenv("SLACK_BOT_TOKEN", "")
+    if not bot_token:
+        raise ValueError("SLACK_BOT_TOKEN environment variable is not set.")
+
+    pr_block = f"\n*Pull Request:* <{pr_url}|View GitHub PR>" if pr_url else ""
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "⚡ Epok Lifecycle Status Update",
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Status:* `{status_text}`{pr_block}",
+            },
+        },
+    ]
+
+    headers = {
+        "Authorization": f"Bearer {bot_token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+
+    payload = {
+        "channel": channel,
+        "ts": message_ts,
+        "text": f"Epok Status Update: {status_text}",
+        "blocks": blocks,
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(SLACK_API_UPDATE_MESSAGE, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+    if not data.get("ok"):
+        raise ValueError(f"Slack API error updating message '{message_ts}': {data.get('error')}")
+
+    return {
+        "channel": channel,
+        "ts": message_ts,
+        "status": "updated",
+        "status_text": status_text,
+    }
+
+
