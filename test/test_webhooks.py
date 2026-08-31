@@ -3,6 +3,7 @@ import hmac
 import json
 import time
 from urllib.parse import urlencode
+from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 from api.main import app
 
@@ -15,9 +16,18 @@ def test_healthz():
     assert response.json() == {"status": "ok"}
 
 
+
 def test_linear_webhook_success(monkeypatch):
     secret = "test-linear-secret"
     monkeypatch.setenv("LINEAR_WEBHOOK_SECRET", secret)
+
+    mock_client = MagicMock()
+    mock_client.start_workflow = AsyncMock()
+
+    async def mock_get_client():
+        return mock_client
+
+    monkeypatch.setattr("api.routes.linear.get_temporal_client", mock_get_client)
 
     payload = {
         "action": "update",
@@ -38,6 +48,8 @@ def test_linear_webhook_success(monkeypatch):
     )
     assert response.status_code == 202
     assert response.json()["workflow_id"] == "epok-linear-lin-abc-2026-08-29T10:00:00Z"
+    mock_client.start_workflow.assert_called_once()
+
 
 
 def test_linear_webhook_unauthorized():
