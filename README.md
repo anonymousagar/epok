@@ -146,61 +146,166 @@ epok/
 
 ---
 
-## ⚡ Quick Start & Local Development
+## ⚡ Step-by-Step Guide: How to Run Epok Locally
 
-### 1. Prerequisites
-Ensure you have installed:
-* Python 3.9+
-* Docker & Docker Compose
-* Git
+Follow this complete step-by-step process to set up credentials, start local infrastructure, launch Epok microservices, configure public webhooks, and trigger a live feature delivery run.
 
-### 2. Clone & Setup Environment
-```bash
-git clone https://github.com/anonymousagar/epok.git
-cd epok
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-### 3. Launch Local Services (Temporal & Postgres)
-```bash
-docker-compose up -d
-```
-* **Temporal Web UI**: [http://localhost:8233](http://localhost:8233)
-* **PostgreSQL Database**: `localhost:5432`
-
-### 4. Configure API Keys (`.env`)
-Export the required API keys and secrets:
-```bash
-export GEMINI_API_KEY="AIzaSy..."
-export GITHUB_TOKEN="ghp_..."
-export SLACK_BOT_TOKEN="xoxb-..."
-export LINEAR_API_KEY="lin_api_..."
-export LINEAR_WEBHOOK_SECRET="secret_linear"
-export GITHUB_WEBHOOK_SECRET="secret_github"
-export SLACK_SIGNING_SECRET="secret_slack"
-export TEMPORAL_HOST="localhost:7233"
-export EPOK_TASK_QUEUE="epok-task-queue"
-```
-
-### 5. Launch Worker & Webhook Gateway
-In terminal 1 (Worker):
-```bash
-python src/worker/worker.py
-```
-
-In terminal 2 (API Gateway):
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8080 --reload
-```
+### 📋 Step 1: Prerequisites Check
+Ensure the following tools are installed on your machine:
+* **Python**: `python3 --version` (3.9 or higher)
+* **Docker Desktop**: `docker --version` and `docker-compose --version`
+* **Git**: `git --version`
+* **ngrok** (or `localtunnel`): `brew install ngrok`
 
 ---
 
-## 🧪 Testing
+### 🔑 Step 2: Obtain Required Third-Party Credentials & API Keys
 
-Run the full automated pytest suite:
+Before starting Epok, obtain your 4 free API keys from the developer portals:
+
+| Credentials / Keys | Where to Get It | Scopes / Permissions Required |
+| :--- | :--- | :--- |
+| **`GEMINI_API_KEY`** | **[aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)** | Generative Language API access (Free key) |
+| **`GITHUB_TOKEN`** | **[github.com/settings/tokens](https://github.com/settings/tokens)** | Personal Access Token (Classic) with `repo` & `workflow` scopes |
+| **`LINEAR_API_KEY`** | **[linear.app/settings/api](https://linear.app/settings/api)** | Personal API Key (starts with `lin_api_...`) |
+| **`SLACK_BOT_TOKEN`** | **[api.slack.com/apps](https://api.slack.com/apps)** | Bot User OAuth Token with `chat:write` & `channels:read` scopes |
+| **`SLACK_SIGNING_SECRET`** | **[api.slack.com/apps](https://api.slack.com/apps)** | Found under *Basic Information* → *App Credentials* |
+
+---
+
+### 🛠️ Step 3: Local Environment Setup
+
+1. **Clone the Repository & Navigate to Directory**:
+   ```bash
+   git clone https://github.com/anonymousagar/epok.git
+   cd epok
+   ```
+
+2. **Create and Activate Python Virtual Environment**:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+3. **Install Dependencies**:
+   ```bash
+   pip install -e .
+   ```
+
+4. **Create Local `.env` Configuration File**:
+   Create a file named `.env` in the root `epok/` directory:
+   ```bash
+   # --- LLM API Credentials ---
+   GEMINI_API_KEY="AIzaSy..."
+
+   # --- GitHub Integration ---
+   GITHUB_TOKEN="ghp_..."
+   GITHUB_WEBHOOK_SECRET="epok_github_secret_2026"
+
+   # --- Linear Integration ---
+   LINEAR_API_KEY="lin_api_..."
+   LINEAR_WEBHOOK_SECRET="your_linear_signing_secret"
+
+   # --- Slack Integration ---
+   SLACK_BOT_TOKEN="xoxb-..."
+   SLACK_SIGNING_SECRET="your_slack_signing_secret"
+   SLACK_DEFAULT_CHANNEL="#epok-approvals"
+
+   # --- Temporal Engine Settings ---
+   TEMPORAL_HOST="localhost:7233"
+   EPOK_TASK_QUEUE="epok-task-queue"
+   ```
+
+---
+
+### 🐳 Step 4: Start Local Infrastructure (PostgreSQL & Temporal Server)
+
+Run Docker Compose to launch the local database, Temporal orchestrator server, and Temporal Web UI:
+```bash
+docker-compose up -d
+```
+
+#### Verify Docker Services:
+1. Run `docker ps` to verify **3 containers** are running:
+   * `postgres:15-alpine` (`port 5432`)
+   * `temporalio/auto-setup` (`port 7233`)
+   * `temporalio/ui` (`port 8233`)
+2. Open **[http://localhost:8233](http://localhost:8233)** in your browser to verify the **Temporal Web Dashboard**.
+
+---
+
+### 🚀 Step 5: Launch Epok Services (Worker & Webhook Gateway)
+
+Open two separate terminal windows:
+
+#### Terminal 1 — Launch Temporal Worker Daemon:
+```bash
+cd epok
+source .venv/bin/activate
+export $(cat .env | xargs)
+PYTHONPATH=src python src/worker/worker.py
+```
+> *Output*: `INFO:epok.worker:Starting Epok Temporal Worker listening on task queue 'epok-task-queue'...`
+
+#### Terminal 2 — Launch FastAPI Webhook Gateway:
+```bash
+cd epok
+source .venv/bin/activate
+export $(cat .env | xargs)
+PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8080 --reload
+```
+> *Output*: `INFO: Uvicorn running on http://0.0.0.0:8080`
+
+---
+
+### 🌐 Step 6: Expose Public Webhook Tunnel via Ngrok
+
+In Terminal 3, create a public HTTPS tunnel to forward external webhooks to your local port 8080:
+```bash
+ngrok http 8080
+```
+> *Output*: `Forwarding https://<YOUR_NGROK_SUBDOMAIN>.ngrok-free.app -> http://localhost:8080`
+
+---
+
+### 🔗 Step 7: Configure Webhook Endpoints in Developer Portals
+
+Using your HTTPS ngrok domain (e.g. `https://dc95-103-187-217-229.ngrok-free.app`), configure webhooks:
+
+1. **Linear Webhook**:
+   * Go to **[linear.app/settings/api](https://linear.app/settings/api)** → **Webhooks** → **New Webhook**.
+   * URL: `https://<YOUR_NGROK_SUBDOMAIN>.ngrok-free.app/webhooks/linear`
+   * Check **Issues** (Create & Update events). Copy the generated secret to `LINEAR_WEBHOOK_SECRET` in `.env`.
+2. **Slack Interactivity**:
+   * Go to **[api.slack.com/apps](https://api.slack.com/apps)** → **Interactivity & Shortcuts** → Toggle **ON**.
+   * Request URL: `https://<YOUR_NGROK_SUBDOMAIN>.ngrok-free.app/webhooks/slack`
+3. **GitHub Repository Webhook**:
+   * Go to **[github.com/anonymousagar/epok/settings/hooks](https://github.com/anonymousagar/epok/settings/hooks)** → **Add Webhook**.
+   * Payload URL: `https://<YOUR_NGROK_SUBDOMAIN>.ngrok-free.app/webhooks/github`
+   * Content type: `application/json`
+   * Select **Workflow runs** event. Copy secret to `GITHUB_WEBHOOK_SECRET` in `.env`.
+
+---
+
+### 🎯 Step 8: Trigger & Verify End-to-End Execution
+
+1. **Create an Issue in Linear**:
+   * Title: `Add health check route to FastAPI API gateway`
+   * Description: `Add a GET /health route in src/api/main.py returning status ok.`
+2. **Slack Approval Card**:
+   * Check your `#epok-approvals` Slack channel. Epok will generate an architecture plan using Gemini 2.5 Flash and post an interactive Block Kit card.
+   * Click **Approve Spec** in Slack.
+3. **Automated PR & Status Update**:
+   * Epok generates multi-file code patches, creates branch `epok/lin-<id>`, commits code, and opens a GitHub Pull Request on your repository!
+   * Linear status updates automatically to **`In Review`** with the PR URL attached.
+4. **Monitor Workflow Traces**:
+   * Inspect live execution steps at **[http://localhost:8233](http://localhost:8233)**.
+
+---
+
+## 🧪 Automated Testing
+
+Run the full pytest unit test suite:
 ```bash
 .venv/bin/pytest test/test_activities.py test/test_dtos.py test/test_webhooks.py test/test_worker.py test/test_workflows.py
 ```
@@ -225,7 +330,7 @@ terraform init
 terraform apply
 ```
 
-### 3. Configure Webhooks
+### 3. Configure Production Webhooks
 Point your external platforms to your deployed Cloud Run URL:
 
 | Webhook Event | Endpoint URL |
@@ -234,7 +339,7 @@ Point your external platforms to your deployed Cloud Run URL:
 | **GitHub Actions Run** | `https://<CLOUD_RUN_URL>/webhooks/github` |
 | **Slack Button Click** | `https://<CLOUD_RUN_URL>/webhooks/slack` |
 
-For step-by-step verification, see the complete [E2E Runbook](file:///Users/atul.sagar/epok/docs/e2e_runbook.md).
+For complete operational procedures, see the [E2E Runbook](file:///Users/atul.sagar/epok/docs/e2e_runbook.md).
 
 ---
 
@@ -248,4 +353,3 @@ For step-by-step verification, see the complete [E2E Runbook](file:///Users/atul
 
 ## 📄 License
 This project is licensed under the MIT License.
-
