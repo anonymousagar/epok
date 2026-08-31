@@ -1,27 +1,27 @@
 import pytest
-from unittest.mock import AsyncMock
+from temporalio import activity
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from workflows.spec_architecture import SpecArchitectureWorkflow
-from activities.linear_activities import fetch_linear_issue_details
-from activities.github_activities import inspect_repo_context
-from activities.gemini_activities import generate_technical_spec
-from activities.slack_activities import dispatch_slack_spec_approval
-from models.dtos import SpecArchitectureOutput
-
+from workflows.code_generation import CodeGenerationWorkflow
+from workflows.ci_repair import CIRepairWorkflow
+from workflows.feature_delivery import FeatureDeliveryLifecycleWorkflow
+from models.dtos import SpecArchitectureOutput, CodePatchResult, CIExecutionResult
 
 
 @pytest.mark.asyncio
 async def test_spec_architecture_workflow_execution():
     async with await WorkflowEnvironment.start_time_skipping() as env:
-        # Define mock activity implementations
+        @activity.defn(name="fetch_linear_issue_details")
         async def mock_linear_activity(issue_id: str):
             return {"id": issue_id, "title": "Add Auth", "description": "Need OAuth", "url": "https://linear.app/1"}
 
+        @activity.defn(name="inspect_repo_context")
         async def mock_github_activity(repo_name: str, branch: str = "main"):
             return {"repo_name": repo_name, "default_branch": branch, "file_paths": ["src/main.py"], "manifests": {}}
 
+        @activity.defn(name="generate_technical_spec")
         async def mock_gemini_activity(issue_context, repo_context):
             return SpecArchitectureOutput(
                 summary="Build OAuth flow",
@@ -30,15 +30,19 @@ async def test_spec_architecture_workflow_execution():
                 test_strategy="Unit test tokens"
             )
 
+        @activity.defn(name="dispatch_slack_spec_approval")
         async def mock_slack_activity(spec, issue_url="", channel=""):
             return {"channel": "C12345", "ts": "100.1", "status": "posted"}
 
+        @activity.defn(name="generate_code_patches")
         async def mock_gen_patches(spec, repo_context, existing_contents={}):
             return {"src/auth.py": "def auth(): pass\n"}
 
+        @activity.defn(name="commit_code_patches")
         async def mock_commit_patches(repo_name, branch_name, file_patches, commit_message=""):
             return "sha-12345"
 
+        @activity.defn(name="create_github_pr")
         async def mock_create_pr(repo_name, head_branch, base_branch="main", title="", body="", commit_sha=""):
             return CodePatchResult(
                 branch_name=head_branch,
@@ -60,15 +64,6 @@ async def test_spec_architecture_workflow_execution():
                 mock_commit_patches,
                 mock_create_pr,
             ],
-            activity_executors={
-                fetch_linear_issue_details: mock_linear_activity,
-                inspect_repo_context: mock_github_activity,
-                generate_technical_spec: mock_gemini_activity,
-                dispatch_slack_spec_approval: mock_slack_activity,
-                generate_code_patches: mock_gen_patches,
-                commit_code_patches: mock_commit_patches,
-                create_github_pr: mock_create_pr,
-            }
         ):
             handle = await env.client.start_workflow(
                 SpecArchitectureWorkflow.run,
@@ -77,7 +72,6 @@ async def test_spec_architecture_workflow_execution():
                 task_queue="test-spec-queue",
             )
 
-            # Signal approval to the running workflow
             await handle.signal(SpecArchitectureWorkflow.receive_approval_signal, "approved")
             result = await handle.result()
 
@@ -86,22 +80,18 @@ async def test_spec_architecture_workflow_execution():
             assert result.impacted_files == ["src/auth.py"]
 
 
-
-from workflows.code_generation import CodeGenerationWorkflow
-from activities.code_activities import generate_code_patches
-from activities.github_activities import commit_code_patches, create_github_pr
-from models.dtos import CodePatchResult
-
-
 @pytest.mark.asyncio
 async def test_code_generation_workflow_execution():
     async with await WorkflowEnvironment.start_time_skipping() as env:
+        @activity.defn(name="generate_code_patches")
         async def mock_gen_patches(spec, repo_context, existing_contents={}):
             return {"src/auth.py": "def auth(): pass\n"}
 
+        @activity.defn(name="commit_code_patches")
         async def mock_commit_patches(repo_name, branch_name, file_patches, commit_message=""):
             return "sha-12345"
 
+        @activity.defn(name="create_github_pr")
         async def mock_create_pr(repo_name, head_branch, base_branch="main", title="", body="", commit_sha=""):
             return CodePatchResult(
                 branch_name=head_branch,
@@ -126,11 +116,6 @@ async def test_code_generation_workflow_execution():
                 mock_commit_patches,
                 mock_create_pr,
             ],
-            activity_executors={
-                generate_code_patches: mock_gen_patches,
-                commit_code_patches: mock_commit_patches,
-                create_github_pr: mock_create_pr,
-            }
         ):
             result = await env.client.execute_workflow(
                 CodeGenerationWorkflow.run,
@@ -145,23 +130,22 @@ async def test_code_generation_workflow_execution():
             assert result.commit_sha == "sha-12345"
 
 
-from workflows.ci_repair import CIRepairWorkflow
-from activities.ci_activities import fetch_ci_failure_logs, generate_ci_repair_patches
-from models.dtos import CIExecutionResult
-
-
 @pytest.mark.asyncio
 async def test_ci_repair_workflow_execution():
     async with await WorkflowEnvironment.start_time_skipping() as env:
+        @activity.defn(name="fetch_ci_failure_logs")
         async def mock_fetch_logs(repo_name, run_id):
             return {"run_id": run_id, "error_trace": "AssertionError", "failed_steps": ["test"]}
 
+        @activity.defn(name="inspect_repo_context")
         async def mock_inspect_repo(repo_name, branch="main"):
             return {"repo_name": repo_name, "default_branch": branch, "manifests": {}}
 
+        @activity.defn(name="generate_ci_repair_patches")
         async def mock_gen_repair(repo_name, head_branch, error_trace, current_files={}):
             return {"src/main.py": "fixed"}
 
+        @activity.defn(name="commit_code_patches")
         async def mock_commit_patches(repo_name, branch_name, file_patches, commit_message=""):
             return "sha-fixed"
 
@@ -175,12 +159,6 @@ async def test_ci_repair_workflow_execution():
                 mock_gen_repair,
                 mock_commit_patches,
             ],
-            activity_executors={
-                fetch_ci_failure_logs: mock_fetch_logs,
-                inspect_repo_context: mock_inspect_repo,
-                generate_ci_repair_patches: mock_gen_repair,
-                commit_code_patches: mock_commit_patches,
-            }
         ):
             result = await env.client.execute_workflow(
                 CIRepairWorkflow.run,
@@ -194,18 +172,18 @@ async def test_ci_repair_workflow_execution():
             assert "AssertionError" in result.logs
 
 
-from workflows.feature_delivery import FeatureDeliveryLifecycleWorkflow
-
-
 @pytest.mark.asyncio
 async def test_feature_delivery_lifecycle_workflow_execution():
     async with await WorkflowEnvironment.start_time_skipping() as env:
+        @activity.defn(name="fetch_linear_issue_details")
         async def mock_linear_act(issue_id: str):
             return {"id": issue_id, "title": "Add Auth", "url": "https://linear.app/1"}
 
+        @activity.defn(name="inspect_repo_context")
         async def mock_github_act(repo_name: str, branch: str = "main"):
             return {"repo_name": repo_name, "default_branch": branch, "manifests": {}}
 
+        @activity.defn(name="generate_technical_spec")
         async def mock_gemini_spec_act(issue_context, repo_context):
             return SpecArchitectureOutput(
                 summary="Build Auth",
@@ -214,15 +192,19 @@ async def test_feature_delivery_lifecycle_workflow_execution():
                 test_strategy="pytest"
             )
 
+        @activity.defn(name="dispatch_slack_spec_approval")
         async def mock_slack_act(spec, issue_url="", channel=""):
             return {"channel": "C123", "ts": "1.1", "status": "posted"}
 
+        @activity.defn(name="generate_code_patches")
         async def mock_gen_code_act(spec, repo_context, existing_contents={}):
             return {"src/auth.py": "def auth(): pass\n"}
 
+        @activity.defn(name="commit_code_patches")
         async def mock_commit_code_act(repo_name, branch_name, file_patches, commit_message=""):
             return "sha-555"
 
+        @activity.defn(name="create_github_pr")
         async def mock_create_pr_act(repo_name, head_branch, base_branch="main", title="", body="", commit_sha=""):
             return CodePatchResult(
                 branch_name=head_branch,
@@ -244,15 +226,6 @@ async def test_feature_delivery_lifecycle_workflow_execution():
                 mock_commit_code_act,
                 mock_create_pr_act,
             ],
-            activity_executors={
-                fetch_linear_issue_details: mock_linear_act,
-                inspect_repo_context: mock_github_act,
-                generate_technical_spec: mock_gemini_spec_act,
-                dispatch_slack_spec_approval: mock_slack_act,
-                generate_code_patches: mock_gen_code_act,
-                commit_code_patches: mock_commit_code_act,
-                create_github_pr: mock_create_pr_act,
-            }
         ):
             handle = await env.client.start_workflow(
                 FeatureDeliveryLifecycleWorkflow.run,
