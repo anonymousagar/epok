@@ -6,6 +6,7 @@ from workflows.spec_architecture import SpecArchitectureWorkflow
 from activities.linear_activities import fetch_linear_issue_details
 from activities.github_activities import inspect_repo_context
 from activities.gemini_activities import generate_technical_spec
+from activities.slack_activities import dispatch_slack_spec_approval
 
 
 @pytest.mark.asyncio
@@ -33,6 +34,7 @@ async def test_run_worker_initialization(monkeypatch):
                 fetch_linear_issue_details,
                 inspect_repo_context,
                 generate_technical_spec,
+                dispatch_slack_spec_approval,
             ],
         )
         mock_worker_instance.run.assert_called_once()

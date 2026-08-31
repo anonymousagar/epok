@@ -124,3 +124,54 @@ async def test_generate_technical_spec_missing_api_key(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ValueError, match="GEMINI_API_KEY environment variable is not set."):
         await generate_technical_spec({}, {})
+
+
+# --- Issue EPO-12 Tests: Slack Spec Dispatch Activity ---
+
+from activities.slack_activities import dispatch_slack_spec_approval
+
+
+@pytest.mark.asyncio
+async def test_dispatch_slack_spec_approval_success(monkeypatch):
+    monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-fake-slack-token")
+
+    mock_response_data = {"ok": True, "channel": "C123456", "ts": "1725100000.000100"}
+
+    captured_kwargs = {}
+
+    async def mock_post(self, url, *args, **kwargs):
+        captured_kwargs.update(kwargs)
+        request = httpx.Request("POST", url)
+        return httpx.Response(200, json=mock_response_data, request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    spec = SpecArchitectureOutput(
+        summary="Build OAuth flow",
+        impacted_files=["src/auth.py"],
+        implementation_steps=["1. Add route"],
+        test_strategy="Unit test tokens"
+    )
+
+    result = await dispatch_slack_spec_approval(spec, issue_url="https://linear.app/issue/lin-1", channel="#test-channel")
+    assert result["status"] == "posted"
+    assert result["channel"] == "C123456"
+    assert result["ts"] == "1725100000.000100"
+
+    payload = captured_kwargs.get("json", {})
+    assert payload["channel"] == "#test-channel"
+    assert len(payload["blocks"]) == 7
+
+
+
+@pytest.mark.asyncio
+async def test_dispatch_slack_spec_approval_missing_token(monkeypatch):
+    monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
+    spec = SpecArchitectureOutput(
+        summary="Build OAuth flow",
+        impacted_files=["src/auth.py"],
+        implementation_steps=["1. Add route"],
+        test_strategy="Unit test tokens"
+    )
+    with pytest.raises(ValueError, match="SLACK_BOT_TOKEN environment variable is not set."):
+        await dispatch_slack_spec_approval(spec)
