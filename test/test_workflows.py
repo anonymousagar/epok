@@ -7,7 +7,9 @@ from workflows.spec_architecture import SpecArchitectureWorkflow
 from activities.linear_activities import fetch_linear_issue_details
 from activities.github_activities import inspect_repo_context
 from activities.gemini_activities import generate_technical_spec
+from activities.slack_activities import dispatch_slack_spec_approval
 from models.dtos import SpecArchitectureOutput
+
 
 
 @pytest.mark.asyncio
@@ -28,6 +30,9 @@ async def test_spec_architecture_workflow_execution():
                 test_strategy="Unit test tokens"
             )
 
+        async def mock_slack_activity(spec, issue_url="", channel=""):
+            return {"channel": "C12345", "ts": "100.1", "status": "posted"}
+
         async with Worker(
             env.client,
             task_queue="test-spec-queue",
@@ -36,19 +41,26 @@ async def test_spec_architecture_workflow_execution():
                 mock_linear_activity,
                 mock_github_activity,
                 mock_gemini_activity,
+                mock_slack_activity,
             ],
             activity_executors={
                 fetch_linear_issue_details: mock_linear_activity,
                 inspect_repo_context: mock_github_activity,
                 generate_technical_spec: mock_gemini_activity,
+                dispatch_slack_spec_approval: mock_slack_activity,
             }
         ):
-            result = await env.client.execute_workflow(
+            handle = await env.client.start_workflow(
                 SpecArchitectureWorkflow.run,
                 args=["lin-101", "org/epok", "main"],
                 id="test-spec-workflow-id",
                 task_queue="test-spec-queue",
             )
+
+            # Signal approval to the running workflow
+            await handle.signal(SpecArchitectureWorkflow.receive_approval_signal, "approved")
+
+            result = await handle.result()
 
             assert isinstance(result, SpecArchitectureOutput)
             assert result.summary == "Build OAuth flow"
