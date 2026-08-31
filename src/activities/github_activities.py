@@ -49,3 +49,65 @@ async def inspect_repo_context(repo_name: str, branch: str = "main") -> Dict[str
         "file_paths": file_paths[:500],  # Bound tree depth to protect prompt token limits
         "manifests": manifests,
     }
+
+
+@activity.defn
+async def commit_code_patches(
+    repo_name: str,
+    branch_name: str,
+    file_patches: Dict[str, str],
+    commit_message: str = ""
+) -> str:
+    """
+    Creates a target feature branch (if it doesn't exist) and commits generated file patches.
+    Returns the latest commit SHA on the branch.
+    """
+    token = os.getenv("GITHUB_TOKEN", "")
+    if not token:
+        raise ValueError("GITHUB_TOKEN environment variable is not set.")
+
+    auth = Auth.Token(token)
+    gh = Github(auth=auth)
+
+    try:
+        repo = gh.get_repo(repo_name)
+    except Exception as exc:
+        raise ValueError(f"Failed to access GitHub repository '{repo_name}': {exc}")
+
+    # Ensure feature branch exists, creating it from default branch if needed
+    try:
+        branch_ref = repo.get_git_ref(f"heads/{branch_name}")
+        commit_sha = branch_ref.object.sha
+    except Exception:
+        default_branch = repo.get_branch(repo.default_branch)
+        base_sha = default_branch.commit.sha
+        ref = repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=base_sha)
+        commit_sha = ref.object.sha
+
+    msg = commit_message or f"feat: epok automated code patch for branch {branch_name}"
+
+    for file_path, content in file_patches.items():
+        try:
+            existing_file = repo.get_contents(file_path, ref=branch_name)
+            if not isinstance(existing_file, list):
+                res = repo.update_file(
+                    path=file_path,
+                    message=msg,
+                    content=content,
+                    sha=existing_file.sha,
+                    branch=branch_name,
+                )
+                commit_obj = res.get("commit") if isinstance(res, dict) else getattr(res, "commit", None)
+                commit_sha = getattr(commit_obj, "sha", "") or (commit_obj.get("sha") if isinstance(commit_obj, dict) else "")
+        except Exception:
+            # File does not exist yet on branch -> create file
+            res = repo.create_file(
+                path=file_path,
+                message=msg,
+                content=content,
+                branch=branch_name,
+            )
+            commit_obj = res.get("commit") if isinstance(res, dict) else getattr(res, "commit", None)
+            commit_sha = getattr(commit_obj, "sha", "") or (commit_obj.get("sha") if isinstance(commit_obj, dict) else "")
+
+    return commit_sha

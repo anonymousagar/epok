@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from worker.worker import run_worker
 from workflows.spec_architecture import SpecArchitectureWorkflow
 from activities.linear_activities import fetch_linear_issue_details
-from activities.github_activities import inspect_repo_context
+from activities.github_activities import inspect_repo_context, commit_code_patches
 from activities.gemini_activities import generate_technical_spec
 from activities.slack_activities import dispatch_slack_spec_approval
 from activities.code_activities import generate_code_patches
@@ -34,6 +34,7 @@ async def test_run_worker_initialization(monkeypatch):
             activities=[
                 fetch_linear_issue_details,
                 inspect_repo_context,
+                commit_code_patches,
                 generate_technical_spec,
                 dispatch_slack_spec_approval,
                 generate_code_patches,

@@ -67,3 +67,4 @@ Please generate the complete, updated code for all impacted files.
 
     patches_output = CodePatchesOutput.model_validate_json(response.text)
     return {patch.path: patch.content for patch in patches_output.patches}
+

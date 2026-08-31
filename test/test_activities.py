@@ -227,3 +227,45 @@ async def test_generate_code_patches_missing_api_key(monkeypatch):
     )
     with pytest.raises(ValueError, match="GEMINI_API_KEY environment variable is not set."):
         await generate_code_patches(spec, {})
+
+
+# --- Ticket 4.2 Tests: GitHub Branch & Commit Activity ---
+
+from activities.github_activities import commit_code_patches
+
+
+@pytest.mark.asyncio
+async def test_commit_code_patches_success(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "fake-gh-token")
+
+    mock_commit = MagicMock()
+    mock_commit.sha = "sha999"
+    mock_repo = MagicMock()
+
+    # Existing file on branch
+    mock_file = MagicMock()
+    mock_file.sha = "sha123"
+    mock_repo.get_contents.return_value = mock_file
+    mock_repo.update_file.return_value = {"commit": mock_commit}
+
+    # Branch ref existing
+    mock_ref = MagicMock()
+    mock_ref.object.sha = "sha888"
+    mock_repo.get_git_ref.return_value = mock_ref
+
+    mock_gh = MagicMock()
+    mock_gh.get_repo.return_value = mock_repo
+
+    monkeypatch.setattr("activities.github_activities.Github", lambda auth: mock_gh)
+
+    result = await commit_code_patches("org/epok", "epok/test-branch", {"src/main.py": "print('hello')"})
+    assert result == "sha999"
+    mock_repo.update_file.assert_called_once()
+
+
+
+@pytest.mark.asyncio
+async def test_commit_code_patches_missing_token(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="GITHUB_TOKEN environment variable is not set."):
+        await commit_code_patches("org/epok", "epok/test-branch", {})
