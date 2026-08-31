@@ -127,3 +127,39 @@ def test_github_webhook_success(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["run_id"] == 99999
+    assert response.json()["conclusion"] == "success"
+
+
+def test_github_webhook_ci_failure_dispatch(monkeypatch):
+    secret = "test-github-secret"
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", secret)
+
+    mock_client = MagicMock()
+    mock_client.start_workflow = AsyncMock()
+
+    async def mock_get_client():
+        return mock_client
+
+    monkeypatch.setattr("api.routes.github.get_temporal_client", mock_get_client)
+
+    payload = {
+        "action": "completed",
+        "workflow_run": {
+            "id": 88888,
+            "name": "build",
+            "head_branch": "epok/lin-xyz",
+            "conclusion": "failure",
+            "html_url": "https://github.com/runs/88888"
+        }
+    }
+    raw_body = json.dumps(payload).encode("utf-8")
+    sig = "sha256=" + hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+    response = client.post(
+        "/webhooks/github",
+        content=raw_body,
+        headers={"X-Hub-Signature-256": sig, "Content-Type": "application/json"}
+    )
+    assert response.status_code == 200
+    assert response.json()["workflow_id"] == "epok-ci-repair-88888-epok-lin-xyz"
+    mock_client.start_workflow.assert_called_once()

@@ -320,3 +320,49 @@ async def test_create_github_pr_missing_token(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     with pytest.raises(ValueError, match="GITHUB_TOKEN environment variable is not set."):
         await create_github_pr("org/epok", "epok/test-branch")
+
+
+# --- Ticket 5.1 Tests: CI Log Extractor Activity ---
+
+from activities.ci_activities import fetch_ci_failure_logs
+
+
+@pytest.mark.asyncio
+async def test_fetch_ci_failure_logs_success(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "fake-gh-token")
+
+    mock_step = MagicMock()
+    mock_step.name = "pytest"
+    mock_step.conclusion = "failure"
+
+    mock_job = MagicMock()
+    mock_job.name = "build-and-test"
+    mock_job.conclusion = "failure"
+    mock_job.steps = [mock_step]
+
+    mock_run = MagicMock()
+    mock_run.head_branch = "epok/test-branch"
+    mock_run.conclusion = "failure"
+    mock_run.jobs.return_value = [mock_job]
+
+    mock_repo = MagicMock()
+    mock_repo.get_workflow_run.return_value = mock_run
+
+    mock_gh = MagicMock()
+    mock_gh.get_repo.return_value = mock_repo
+
+    monkeypatch.setattr("activities.ci_activities.Github", lambda auth: mock_gh)
+
+    result = await fetch_ci_failure_logs("org/epok", 88888)
+    assert result["run_id"] == 88888
+    assert result["head_branch"] == "epok/test-branch"
+    assert result["conclusion"] == "failure"
+    assert "Job 'build-and-test' -> Step 'pytest' failed." in result["error_trace"]
+    assert "pytest" in result["failed_steps"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_ci_failure_logs_missing_token(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="GITHUB_TOKEN environment variable is not set."):
+        await fetch_ci_failure_logs("org/epok", 88888)

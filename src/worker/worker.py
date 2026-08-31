@@ -11,6 +11,7 @@ from activities.github_activities import inspect_repo_context, commit_code_patch
 from activities.gemini_activities import generate_technical_spec
 from activities.slack_activities import dispatch_slack_spec_approval
 from activities.code_activities import generate_code_patches
+from activities.ci_activities import fetch_ci_failure_logs
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("epok.worker")
@@ -36,6 +37,7 @@ async def run_worker() -> None:
             generate_technical_spec,
             dispatch_slack_spec_approval,
             generate_code_patches,
+            fetch_ci_failure_logs,
         ],
     )
 

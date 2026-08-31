@@ -80,3 +80,4 @@ class CodeGenerationWorkflow:
         )
 
         return code_patch_result
+
