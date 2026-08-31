@@ -10,7 +10,8 @@ with workflow.unsafe.imports_passed_through():
     from activities.github_activities import inspect_repo_context
     from activities.gemini_activities import generate_technical_spec
     from activities.slack_activities import dispatch_slack_spec_approval
-    from models.dtos import SpecArchitectureOutput
+    from workflows.code_generation import CodeGenerationWorkflow
+    from models.dtos import SpecArchitectureOutput, CodePatchResult
 
 
 @workflow.defn
@@ -75,7 +76,14 @@ class SpecArchitectureWorkflow:
             workflow.logger.warning("Spec architecture approval timed out after 48 hours SLA.")
             self.approval_decision = "timed_out"
 
-        if self.approval_decision != "approved":
-            workflow.logger.info(f"Spec workflow completed with decision status: {self.approval_decision}")
+        if self.approval_decision == "approved":
+            workflow.logger.info("Spec approved! Launching Code Generation & PR Swarm Workflow...")
+            await workflow.execute_child_workflow(
+                CodeGenerationWorkflow.run,
+                args=[spec_output, issue_id, repo_name, branch],
+                id=f"epok-code-gen-{issue_id}",
+            )
+        else:
+            workflow.logger.info(f"Spec workflow completed without PR generation (status: {self.approval_decision})")
 
         return spec_output

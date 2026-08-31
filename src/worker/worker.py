@@ -5,6 +5,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from workflows.spec_architecture import SpecArchitectureWorkflow
+from workflows.code_generation import CodeGenerationWorkflow
 from activities.linear_activities import fetch_linear_issue_details
 from activities.github_activities import inspect_repo_context, commit_code_patches, create_github_pr
 from activities.gemini_activities import generate_technical_spec
@@ -26,7 +27,7 @@ async def run_worker() -> None:
     worker = Worker(
         client,
         task_queue=task_queue,
-        workflows=[SpecArchitectureWorkflow],
+        workflows=[SpecArchitectureWorkflow, CodeGenerationWorkflow],
         activities=[
             fetch_linear_issue_details,
             inspect_repo_context,
