@@ -143,3 +143,52 @@ async def test_code_generation_workflow_execution():
             assert result.branch_name == "epok/lin-101"
             assert result.pr_number == 99
             assert result.commit_sha == "sha-12345"
+
+
+from workflows.ci_repair import CIRepairWorkflow
+from activities.ci_activities import fetch_ci_failure_logs, generate_ci_repair_patches
+from models.dtos import CIExecutionResult
+
+
+@pytest.mark.asyncio
+async def test_ci_repair_workflow_execution():
+    async with await WorkflowEnvironment.start_time_skipping() as env:
+        async def mock_fetch_logs(repo_name, run_id):
+            return {"run_id": run_id, "error_trace": "AssertionError", "failed_steps": ["test"]}
+
+        async def mock_inspect_repo(repo_name, branch="main"):
+            return {"repo_name": repo_name, "default_branch": branch, "manifests": {}}
+
+        async def mock_gen_repair(repo_name, head_branch, error_trace, current_files={}):
+            return {"src/main.py": "fixed"}
+
+        async def mock_commit_patches(repo_name, branch_name, file_patches, commit_message=""):
+            return "sha-fixed"
+
+        async with Worker(
+            env.client,
+            task_queue="test-ci-repair-queue",
+            workflows=[CIRepairWorkflow],
+            activities=[
+                mock_fetch_logs,
+                mock_inspect_repo,
+                mock_gen_repair,
+                mock_commit_patches,
+            ],
+            activity_executors={
+                fetch_ci_failure_logs: mock_fetch_logs,
+                inspect_repo_context: mock_inspect_repo,
+                generate_ci_repair_patches: mock_gen_repair,
+                commit_code_patches: mock_commit_patches,
+            }
+        ):
+            result = await env.client.execute_workflow(
+                CIRepairWorkflow.run,
+                args=[88888, "epok/test-branch", "org/epok", 1],
+                id="test-ci-repair-workflow-id",
+                task_queue="test-ci-repair-queue",
+            )
+
+            assert isinstance(result, CIExecutionResult)
+            assert result.iteration == 1
+            assert "AssertionError" in result.logs

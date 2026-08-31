@@ -6,12 +6,13 @@ from temporalio.worker import Worker
 
 from workflows.spec_architecture import SpecArchitectureWorkflow
 from workflows.code_generation import CodeGenerationWorkflow
+from workflows.ci_repair import CIRepairWorkflow
 from activities.linear_activities import fetch_linear_issue_details
 from activities.github_activities import inspect_repo_context, commit_code_patches, create_github_pr
 from activities.gemini_activities import generate_technical_spec
 from activities.slack_activities import dispatch_slack_spec_approval
 from activities.code_activities import generate_code_patches
-from activities.ci_activities import fetch_ci_failure_logs
+from activities.ci_activities import fetch_ci_failure_logs, generate_ci_repair_patches
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("epok.worker")
@@ -28,7 +29,7 @@ async def run_worker() -> None:
     worker = Worker(
         client,
         task_queue=task_queue,
-        workflows=[SpecArchitectureWorkflow, CodeGenerationWorkflow],
+        workflows=[SpecArchitectureWorkflow, CodeGenerationWorkflow, CIRepairWorkflow],
         activities=[
             fetch_linear_issue_details,
             inspect_repo_context,
@@ -38,6 +39,7 @@ async def run_worker() -> None:
             dispatch_slack_spec_approval,
             generate_code_patches,
             fetch_ci_failure_logs,
+            generate_ci_repair_patches,
         ],
     )
 

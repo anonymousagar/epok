@@ -366,3 +366,44 @@ async def test_fetch_ci_failure_logs_missing_token(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     with pytest.raises(ValueError, match="GITHUB_TOKEN environment variable is not set."):
         await fetch_ci_failure_logs("org/epok", 88888)
+
+
+# --- Ticket 5.2 Tests: Gemini Self-Healing Patch Repair Activity ---
+
+from activities.ci_activities import generate_ci_repair_patches
+
+
+@pytest.mark.asyncio
+async def test_generate_ci_repair_patches_success(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key")
+
+    mock_patches_output = CodePatchesOutput(
+        patches=[
+            FilePatch(path="src/main.py", content="def main(): return 'fixed'\n")
+        ]
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = mock_patches_output.model_dump_json()
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+    monkeypatch.setattr("activities.ci_activities.genai.Client", lambda api_key: mock_client)
+
+    result = await generate_ci_repair_patches(
+        repo_name="org/epok",
+        head_branch="epok/test-branch",
+        error_trace="AssertionError: expected 'fixed' got 'broken'",
+        current_files={"src/main.py": "def main(): return 'broken'\n"}
+    )
+    assert "src/main.py" in result
+    assert result["src/main.py"] == "def main(): return 'fixed'\n"
+    mock_client.aio.models.generate_content.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_ci_repair_patches_missing_api_key(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="GEMINI_API_KEY environment variable is not set."):
+        await generate_ci_repair_patches("org/epok", "epok/test-branch", "error trace")

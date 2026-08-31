@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from worker.worker import run_worker
 from workflows.spec_architecture import SpecArchitectureWorkflow
 from workflows.code_generation import CodeGenerationWorkflow
+from workflows.ci_repair import CIRepairWorkflow
 from activities.linear_activities import fetch_linear_issue_details
 from activities.github_activities import inspect_repo_context, commit_code_patches, create_github_pr
-
 from activities.gemini_activities import generate_technical_spec
 from activities.slack_activities import dispatch_slack_spec_approval
 from activities.code_activities import generate_code_patches
-from activities.ci_activities import fetch_ci_failure_logs
+from activities.ci_activities import fetch_ci_failure_logs, generate_ci_repair_patches
 
 
 @pytest.mark.asyncio
@@ -33,7 +33,7 @@ async def test_run_worker_initialization(monkeypatch):
         mock_worker_cls.assert_called_once_with(
             mock_client,
             task_queue="test-task-queue",
-            workflows=[SpecArchitectureWorkflow, CodeGenerationWorkflow],
+            workflows=[SpecArchitectureWorkflow, CodeGenerationWorkflow, CIRepairWorkflow],
             activities=[
                 fetch_linear_issue_details,
                 inspect_repo_context,
@@ -43,7 +43,9 @@ async def test_run_worker_initialization(monkeypatch):
                 dispatch_slack_spec_approval,
                 generate_code_patches,
                 fetch_ci_failure_logs,
+                generate_ci_repair_patches,
             ],
         )
         mock_worker_instance.run.assert_called_once()
+
 

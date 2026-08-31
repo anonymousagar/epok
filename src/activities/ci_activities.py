@@ -53,3 +53,66 @@ async def fetch_ci_failure_logs(
         "error_trace": error_trace,
         "failed_steps": failed_steps,
     }
+
+
+from google import genai
+
+from google.genai import types
+from models.dtos import CodePatchesOutput
+
+CI_REPAIR_SYSTEM_INSTRUCTION = """You are an expert Automated Debugging & Self-Healing AI Engineer at Epok.
+Your task is to analyze build/test failure stack traces and current codebase file contents, identify the root cause of the error, and generate fixed, production-grade replacement code for all failing files."""
+
+
+@activity.defn
+async def generate_ci_repair_patches(
+    repo_name: str,
+    head_branch: str,
+    error_trace: str,
+    current_files: Dict[str, str] = {}
+) -> Dict[str, str]:
+    """
+    Invokes Gemini 2.5 Flash to analyze CI failure logs and generate repaired code patches.
+    """
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable is not set.")
+
+    client = genai.Client(api_key=api_key)
+
+    files_summary = ""
+    for path, content in current_files.items():
+        files_summary += f"\n--- File: {path} ---\n{content}\n"
+
+    prompt = f"""
+### Target Repository:
+- Repository: {repo_name}
+- Branch: {head_branch}
+
+### CI Build / Test Failure Trace:
+{error_trace}
+
+### Current Source Code Files:
+{files_summary or "No file contents provided."}
+
+Please analyze the failure trace and generate complete, repaired code for any files that require fixes to pass CI.
+"""
+
+    response = await client.aio.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=CI_REPAIR_SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=CodePatchesOutput,
+            temperature=0.2,
+        ),
+    )
+
+    if not response.text:
+        raise ValueError("Gemini returned empty text response for CI repair patch generation.")
+
+    patches_output = CodePatchesOutput.model_validate_json(response.text)
+    return {patch.path: patch.content for patch in patches_output.patches}
+
+
