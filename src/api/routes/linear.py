@@ -4,9 +4,10 @@ import os
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from temporalio.client import Client
 from models.events import LinearWebhookPayload
-from workflows.spec_architecture import SpecArchitectureWorkflow
+from workflows.feature_delivery import FeatureDeliveryLifecycleWorkflow
 
 router = APIRouter(prefix="/webhooks/linear", tags=["Linear Webhook"])
+
 
 
 def verify_linear_signature(raw_body: bytes, signature: str, secret: str) -> bool:
@@ -51,11 +52,12 @@ async def receive_linear_webhook(
     try:
         client = await get_temporal_client()
         await client.start_workflow(
-            SpecArchitectureWorkflow.run,
+            FeatureDeliveryLifecycleWorkflow.run,
             args=[payload.data.id, repo_name, branch],
             id=workflow_id,
             task_queue=task_queue,
         )
+
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

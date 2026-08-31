@@ -192,3 +192,79 @@ async def test_ci_repair_workflow_execution():
             assert isinstance(result, CIExecutionResult)
             assert result.iteration == 1
             assert "AssertionError" in result.logs
+
+
+from workflows.feature_delivery import FeatureDeliveryLifecycleWorkflow
+
+
+@pytest.mark.asyncio
+async def test_feature_delivery_lifecycle_workflow_execution():
+    async with await WorkflowEnvironment.start_time_skipping() as env:
+        async def mock_linear_act(issue_id: str):
+            return {"id": issue_id, "title": "Add Auth", "url": "https://linear.app/1"}
+
+        async def mock_github_act(repo_name: str, branch: str = "main"):
+            return {"repo_name": repo_name, "default_branch": branch, "manifests": {}}
+
+        async def mock_gemini_spec_act(issue_context, repo_context):
+            return SpecArchitectureOutput(
+                summary="Build Auth",
+                impacted_files=["src/auth.py"],
+                implementation_steps=["1. Add route"],
+                test_strategy="pytest"
+            )
+
+        async def mock_slack_act(spec, issue_url="", channel=""):
+            return {"channel": "C123", "ts": "1.1", "status": "posted"}
+
+        async def mock_gen_code_act(spec, repo_context, existing_contents={}):
+            return {"src/auth.py": "def auth(): pass\n"}
+
+        async def mock_commit_code_act(repo_name, branch_name, file_patches, commit_message=""):
+            return "sha-555"
+
+        async def mock_create_pr_act(repo_name, head_branch, base_branch="main", title="", body="", commit_sha=""):
+            return CodePatchResult(
+                branch_name=head_branch,
+                pr_url="https://github.com/org/epok/pull/101",
+                pr_number=101,
+                commit_sha=commit_sha
+            )
+
+        async with Worker(
+            env.client,
+            task_queue="test-feature-delivery-queue",
+            workflows=[FeatureDeliveryLifecycleWorkflow],
+            activities=[
+                mock_linear_act,
+                mock_github_act,
+                mock_gemini_spec_act,
+                mock_slack_act,
+                mock_gen_code_act,
+                mock_commit_code_act,
+                mock_create_pr_act,
+            ],
+            activity_executors={
+                fetch_linear_issue_details: mock_linear_act,
+                inspect_repo_context: mock_github_act,
+                generate_technical_spec: mock_gemini_spec_act,
+                dispatch_slack_spec_approval: mock_slack_act,
+                generate_code_patches: mock_gen_code_act,
+                commit_code_patches: mock_commit_code_act,
+                create_github_pr: mock_create_pr_act,
+            }
+        ):
+            handle = await env.client.start_workflow(
+                FeatureDeliveryLifecycleWorkflow.run,
+                args=["lin-101", "org/epok", "main"],
+                id="test-feature-delivery-workflow-id",
+                task_queue="test-feature-delivery-queue",
+            )
+
+            await handle.signal(FeatureDeliveryLifecycleWorkflow.receive_approval_signal, "approved")
+            result = await handle.result()
+
+            assert isinstance(result, CodePatchResult)
+            assert result.branch_name == "epok/lin-101"
+            assert result.pr_number == 101
+            assert result.commit_sha == "sha-555"

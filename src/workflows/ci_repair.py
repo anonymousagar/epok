@@ -81,3 +81,4 @@ class CIRepairWorkflow:
             logs=error_trace,
             error_trace=error_trace,
         )
+

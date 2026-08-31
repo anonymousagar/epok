@@ -5,6 +5,7 @@ from worker.worker import run_worker
 from workflows.spec_architecture import SpecArchitectureWorkflow
 from workflows.code_generation import CodeGenerationWorkflow
 from workflows.ci_repair import CIRepairWorkflow
+from workflows.feature_delivery import FeatureDeliveryLifecycleWorkflow
 from activities.linear_activities import fetch_linear_issue_details
 from activities.github_activities import inspect_repo_context, commit_code_patches, create_github_pr
 from activities.gemini_activities import generate_technical_spec
@@ -33,7 +34,12 @@ async def test_run_worker_initialization(monkeypatch):
         mock_worker_cls.assert_called_once_with(
             mock_client,
             task_queue="test-task-queue",
-            workflows=[SpecArchitectureWorkflow, CodeGenerationWorkflow, CIRepairWorkflow],
+            workflows=[
+                SpecArchitectureWorkflow,
+                CodeGenerationWorkflow,
+                CIRepairWorkflow,
+                FeatureDeliveryLifecycleWorkflow,
+            ],
             activities=[
                 fetch_linear_issue_details,
                 inspect_repo_context,
