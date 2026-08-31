@@ -343,11 +343,35 @@ For complete operational procedures, see the [E2E Runbook](file:///Users/atul.sa
 
 ---
 
-## 🛡️ Design Decisions & Tradeoffs
+## 🛡️ Design Decisions & Architectural Tradeoffs
 
-1. **Temporal.io Orchestration**: Replaced fragile, custom queue workers with Temporal workflows to guarantee state persistence, exponential retry policies, and long-running human approval SLA gates.
-2. **Pydantic Schema Enforcement with Gemini 2.5 Flash**: Enforced strict response schemas (`CodePatchesOutput`, `SpecArchitectureOutput`) using Gemini's structured output API (`response_mime_type="application/json"`) to eliminate malformed LLM responses.
-3. **Bounded Repair Iterations**: Bounded the self-healing repair loop in `CIRepairWorkflow` to a maximum of **3 iterations** to prevent infinite loops and runaway API costs.
+### 1. Temporal.io Workflow Orchestration vs. Asynchronous Task Queues (Celery/SQS)
+* **Decision**: Adopted Temporal.io event-history workflow engine instead of stateless Celery or AWS SQS worker queues.
+* **Rationale & Trade-off**: Traditional message queues excel at high-throughput, short-lived tasks but struggle with long-running, multi-step state machines. Epok requires pausing execution for up to 48 hours waiting for human Slack approvals. Temporal provides event replay state persistence, automatic activity retries with exponential backoff, and deterministic timers without maintaining polling loops or database locks.
+
+### 2. Native Pydantic Schema Enforcement with Gemini 2.5 Flash
+* **Decision**: Enforced Pydantic output schemas (`SpecArchitectureOutput`, `CodePatchesOutput`) directly at Gemini API sampling time using `response_mime_type="application/json"` and `response_schema`.
+* **Rationale & Trade-off**: Replaced un-typed string output and fragile regex markdown parsing with token-level schema constraints. This guarantees 100% type-safe JSON decoding at the expense of slightly higher LLM sampling latency.
+
+### 3. Bounded Iterative Loop for Self-Healing CI Watchdog
+* **Decision**: Enforced a hard limit of `max_iterations = 3` inside `CIRepairWorkflow`.
+* **Rationale & Trade-off**: Prevents infinite repair loops, runaway API token billing, and accidental git commit spam if a complex architectural bug cannot be resolved automatically. If CI still fails after 3 repair attempts, the workflow halts and escalates the stack trace directly to human developers.
+
+### 4. Cryptographic Perimeter Verification (HMAC-SHA256)
+* **Decision**: Enforced constant-time HMAC-SHA256 signature verification (`hmac.compare_digest`) on all incoming webhook HTTP payloads before starting workflows.
+* **Rationale & Trade-off**: Rejects unauthorized requests, spoofing, and replay attacks at the network perimeter before allocating compute memory or LLM tokens, requiring secret configuration across Linear, GitHub, and Slack settings.
+
+### 5. Deterministic Workflow Execution IDs for Ingestion Idempotency
+* **Decision**: Formatted Temporal workflow IDs as `epok-linear-{issue.id}-{updatedAt}`.
+* **Rationale & Trade-off**: Prevents duplicate workflow instances when upstream platforms (e.g. Linear) send retried webhook POST requests due to network blips.
+
+### 6. Fine-Grained PyGithub Tree Commits vs. Archive Overwrites
+* **Decision**: Used PyGithub's Blob and Ref API to commit targeted file modifications rather than uploading repository tarballs.
+* **Rationale & Trade-off**: Preserves clean Git history, commit author attribution, and branch isolation, though it requires multiple API roundtrips per file patch.
+
+### 7. Declarative Infrastructure-as-Code (Terraform for GCP Cloud Run & Cloud SQL)
+* **Decision**: Defined GCP Cloud Run, Cloud SQL (PostgreSQL 15), Secret Manager, and IAM bindings in HCL Terraform.
+* **Rationale & Trade-off**: Replaced manual console configuration with 100% reproducible IaC tracked in version control, ensuring instant multi-environment provisioning (Staging vs. Production).
 
 ---
 
