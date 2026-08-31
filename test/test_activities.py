@@ -269,3 +269,54 @@ async def test_commit_code_patches_missing_token(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     with pytest.raises(ValueError, match="GITHUB_TOKEN environment variable is not set."):
         await commit_code_patches("org/epok", "epok/test-branch", {})
+
+
+# --- Ticket 4.3 Tests: GitHub PR Creation Activity ---
+
+from activities.github_activities import create_github_pr
+from models.dtos import CodePatchResult
+
+
+@pytest.mark.asyncio
+async def test_create_github_pr_success(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "fake-gh-token")
+
+    mock_pr = MagicMock()
+    mock_pr.html_url = "https://github.com/org/epok/pull/42"
+    mock_pr.number = 42
+
+    mock_repo = MagicMock()
+    mock_repo.create_pull.return_value = mock_pr
+
+    mock_gh = MagicMock()
+    mock_gh.get_repo.return_value = mock_repo
+
+    monkeypatch.setattr("activities.github_activities.Github", lambda auth: mock_gh)
+
+    result = await create_github_pr(
+        repo_name="org/epok",
+        head_branch="epok/test-branch",
+        base_branch="main",
+        title="feat: add feature",
+        body="Automated PR",
+        commit_sha="sha999"
+    )
+
+    assert isinstance(result, CodePatchResult)
+    assert result.branch_name == "epok/test-branch"
+    assert result.pr_url == "https://github.com/org/epok/pull/42"
+    assert result.pr_number == 42
+    assert result.commit_sha == "sha999"
+    mock_repo.create_pull.assert_called_once_with(
+        title="feat: add feature",
+        body="Automated PR",
+        head="epok/test-branch",
+        base="main"
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_github_pr_missing_token(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="GITHUB_TOKEN environment variable is not set."):
+        await create_github_pr("org/epok", "epok/test-branch")

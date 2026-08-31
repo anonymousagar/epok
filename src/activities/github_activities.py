@@ -2,6 +2,8 @@ import os
 from typing import Dict, Any, List
 from github import Github, Auth
 from temporalio import activity
+from models.dtos import CodePatchResult
+
 
 
 @activity.defn
@@ -111,3 +113,48 @@ async def commit_code_patches(
             commit_sha = getattr(commit_obj, "sha", "") or (commit_obj.get("sha") if isinstance(commit_obj, dict) else "")
 
     return commit_sha
+
+
+@activity.defn
+async def create_github_pr(
+    repo_name: str,
+    head_branch: str,
+    base_branch: str = "main",
+    title: str = "",
+    body: str = "",
+    commit_sha: str = ""
+) -> CodePatchResult:
+    """
+    Creates a Pull Request on GitHub targeting base_branch and returns a CodePatchResult.
+    """
+    token = os.getenv("GITHUB_TOKEN", "")
+    if not token:
+        raise ValueError("GITHUB_TOKEN environment variable is not set.")
+
+    auth = Auth.Token(token)
+    gh = Github(auth=auth)
+
+    try:
+        repo = gh.get_repo(repo_name)
+    except Exception as exc:
+        raise ValueError(f"Failed to access GitHub repository '{repo_name}': {exc}")
+
+    pr_title = title or f"feat: automated code patch for branch {head_branch}"
+    pr_body = body or f"Epok Automated Code Generation Pull Request for `{head_branch}`."
+
+    try:
+        pr = repo.create_pull(
+            title=pr_title,
+            body=pr_body,
+            head=head_branch,
+            base=base_branch,
+        )
+    except Exception as exc:
+        raise ValueError(f"Failed to create GitHub Pull Request for '{head_branch}': {exc}")
+
+    return CodePatchResult(
+        branch_name=head_branch,
+        pr_url=pr.html_url,
+        pr_number=pr.number,
+        commit_sha=commit_sha or getattr(pr.head, "sha", ""),
+    )
