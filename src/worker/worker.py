@@ -8,7 +8,7 @@ from workflows.spec_architecture import SpecArchitectureWorkflow
 from workflows.code_generation import CodeGenerationWorkflow
 from workflows.ci_repair import CIRepairWorkflow
 from workflows.feature_delivery import FeatureDeliveryLifecycleWorkflow
-from activities.linear_activities import fetch_linear_issue_details
+from activities.linear_activities import fetch_linear_issue_details, update_linear_issue_status
 from activities.github_activities import inspect_repo_context, commit_code_patches, create_github_pr
 from activities.gemini_activities import generate_technical_spec
 from activities.slack_activities import dispatch_slack_spec_approval
@@ -38,6 +38,7 @@ async def run_worker() -> None:
         ],
         activities=[
             fetch_linear_issue_details,
+            update_linear_issue_status,
             inspect_repo_context,
             commit_code_patches,
             create_github_pr,

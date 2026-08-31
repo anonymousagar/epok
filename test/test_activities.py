@@ -407,3 +407,62 @@ async def test_generate_ci_repair_patches_missing_api_key(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ValueError, match="GEMINI_API_KEY environment variable is not set."):
         await generate_ci_repair_patches("org/epok", "epok/test-branch", "error trace")
+
+
+# --- Ticket 6.2 Tests: Linear State & Comment Sync Activity ---
+
+from activities.linear_activities import update_linear_issue_status
+
+
+@pytest.mark.asyncio
+async def test_update_linear_issue_status_success(monkeypatch):
+    monkeypatch.setenv("LINEAR_API_KEY", "fake-linear-key")
+
+    mock_comment_response = MagicMock()
+    mock_comment_response.raise_for_status = lambda: None
+    mock_comment_response.json.return_value = {
+        "data": {"commentCreate": {"success": True, "comment": {"id": "comment_123"}}}
+    }
+
+    mock_states_response = MagicMock()
+    mock_states_response.raise_for_status = lambda: None
+    mock_states_response.json.return_value = {
+        "data": {
+            "workflowStates": {
+                "nodes": [
+                    {"id": "state_in_review", "name": "In Review"}
+                ]
+            }
+        }
+    }
+
+    mock_update_response = MagicMock()
+    mock_update_response.raise_for_status = lambda: None
+    mock_update_response.json.return_value = {
+        "data": {"issueUpdate": {"success": True}}
+    }
+
+    mock_client = MagicMock()
+    mock_client.post = AsyncMock(side_effect=[mock_comment_response, mock_states_response, mock_update_response])
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    monkeypatch.setattr("activities.linear_activities.httpx.AsyncClient", lambda **kwargs: mock_client)
+
+    result = await update_linear_issue_status(
+        issue_id="lin-101",
+        state_name="In Review",
+        comment_body="PR created: https://github.com/org/epok/pull/42"
+    )
+
+    assert result["issue_id"] == "lin-101"
+    assert result["state_name"] == "In Review"
+    assert result["state_updated"] is True
+    assert result["comment_posted"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_linear_issue_status_missing_api_key(monkeypatch):
+    monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="LINEAR_API_KEY environment variable is not set."):
+        await update_linear_issue_status("lin-101")
