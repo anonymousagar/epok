@@ -65,10 +65,20 @@ def test_slack_webhook_success(monkeypatch):
     secret = "test-slack-secret"
     monkeypatch.setenv("SLACK_SIGNING_SECRET", secret)
 
+    mock_handle = MagicMock()
+    mock_handle.signal = AsyncMock()
+    mock_client = MagicMock()
+    mock_client.get_workflow_handle.return_value = mock_handle
+
+    async def mock_get_client():
+        return mock_client
+
+    monkeypatch.setattr("api.routes.slack.get_temporal_client", mock_get_client)
+
     slack_data = {
         "type": "block_actions",
         "user": {"id": "U123", "username": "testuser"},
-        "actions": [{"block_id": "epok_gate", "action_id": "approve", "value": "APPROVED"}]
+        "actions": [{"block_id": "epok-workflow-100", "action_id": "approve", "value": "epok-workflow-100:approved"}]
     }
     raw_payload = urlencode({"payload": json.dumps(slack_data)})
     ts = str(int(time.time()))
@@ -85,7 +95,12 @@ def test_slack_webhook_success(monkeypatch):
         }
     )
     assert response.status_code == 200
-    assert response.json()["action_value"] == "APPROVED"
+    assert response.json()["action_value"] == "approved"
+    assert response.json()["workflow_id"] == "epok-workflow-100"
+
+    mock_client.get_workflow_handle.assert_called_once_with("epok-workflow-100")
+    mock_handle.signal.assert_called_once_with("spec_approval_signal", "approved")
+
 
 
 def test_github_webhook_success(monkeypatch):
