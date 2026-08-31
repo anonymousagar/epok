@@ -7,6 +7,7 @@ from activities.linear_activities import fetch_linear_issue_details
 from activities.github_activities import inspect_repo_context
 from activities.gemini_activities import generate_technical_spec
 from activities.slack_activities import dispatch_slack_spec_approval
+from activities.code_activities import generate_code_patches
 
 
 @pytest.mark.asyncio
@@ -35,6 +36,7 @@ async def test_run_worker_initialization(monkeypatch):
                 inspect_repo_context,
                 generate_technical_spec,
                 dispatch_slack_spec_approval,
+                generate_code_patches,
             ],
         )
         mock_worker_instance.run.assert_called_once()

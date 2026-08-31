@@ -2,6 +2,8 @@ from .dtos import (
     CIExecutionResult,
     CodePatchResult,
     SpecArchitectureOutput,
+    FilePatch,
+    CodePatchesOutput,
 )
 from .events import (
     GitHubWorkflowRun,
@@ -24,4 +26,7 @@ __all__ = [
     "SpecArchitectureOutput",
     "CodePatchResult",
     "CIExecutionResult",
+    "FilePatch",
+    "CodePatchesOutput",
 ]
+

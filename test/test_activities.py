@@ -175,3 +175,55 @@ async def test_dispatch_slack_spec_approval_missing_token(monkeypatch):
     )
     with pytest.raises(ValueError, match="SLACK_BOT_TOKEN environment variable is not set."):
         await dispatch_slack_spec_approval(spec)
+
+
+# --- Ticket 4.1 Tests: Gemini Code Patch Generator Activity ---
+
+from activities.code_activities import generate_code_patches
+from models.dtos import CodePatchesOutput, FilePatch
+
+
+@pytest.mark.asyncio
+async def test_generate_code_patches_success(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-gemini-key")
+
+    mock_patches_output = CodePatchesOutput(
+        patches=[
+            FilePatch(path="src/auth.py", content="def login(): return True\n")
+        ]
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = mock_patches_output.model_dump_json()
+
+    mock_client = MagicMock()
+    mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+    monkeypatch.setattr("activities.code_activities.genai.Client", lambda api_key: mock_client)
+
+    spec = SpecArchitectureOutput(
+        summary="Build OAuth flow",
+        impacted_files=["src/auth.py"],
+        implementation_steps=["1. Add login function"],
+        test_strategy="Unit test login"
+    )
+    repo_context = {"repo_name": "org/epok", "default_branch": "main"}
+    existing_contents = {"src/auth.py": "# Old auth code\n"}
+
+    result = await generate_code_patches(spec, repo_context, existing_contents)
+    assert "src/auth.py" in result
+    assert result["src/auth.py"] == "def login(): return True\n"
+    mock_client.aio.models.generate_content.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_generate_code_patches_missing_api_key(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    spec = SpecArchitectureOutput(
+        summary="Build OAuth flow",
+        impacted_files=["src/auth.py"],
+        implementation_steps=["1. Add login function"],
+        test_strategy="Unit test login"
+    )
+    with pytest.raises(ValueError, match="GEMINI_API_KEY environment variable is not set."):
+        await generate_code_patches(spec, {})

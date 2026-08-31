@@ -21,3 +21,13 @@ class CIExecutionResult(BaseModel):
     iteration: int
     logs: Optional[str] = None
     error_trace: Optional[str] = None
+
+
+class FilePatch(BaseModel):
+    path: str
+    content: str
+
+
+class CodePatchesOutput(BaseModel):
+    patches: List[FilePatch]
+
