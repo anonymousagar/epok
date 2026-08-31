@@ -22,3 +22,4 @@ output "webhook_slack_endpoint" {
   description = "Slack Interactive Actions Webhook Endpoint"
   value       = "${google_cloud_run_v2_service.epok_gateway.uri}/webhooks/slack"
 }
+

@@ -36,3 +36,4 @@ RUN chmod +x /app/scripts/start.sh
 EXPOSE 8080
 
 ENTRYPOINT ["/app/scripts/start.sh"]
+

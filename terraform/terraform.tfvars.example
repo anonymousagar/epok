@@ -2,3 +2,4 @@ gcp_project_id  = "my-epok-gcp-project"
 gcp_region      = "us-central1"
 container_image = "gcr.io/my-epok-gcp-project/epok-app:latest"
 db_password     = "ChangeMeToStrongPassword2026!"
+
